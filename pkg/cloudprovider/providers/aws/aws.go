@@ -2015,7 +2015,7 @@ func (s *AWSCloud) UpdateTCPLoadBalancer(name, region string, hosts []string) er
 func (a *AWSCloud) getInstancesByIds(ids []string) ([]*ec2.Instance, error) {
 	instances := []*ec2.Instance{}
 	for _, id := range ids {
-		instance, err := a.getInstanceById(id)
+		instance, err := a.getInstanceByID(id)
 		if err != nil {
 			return nil, err
 		}
@@ -2028,22 +2028,48 @@ func (a *AWSCloud) getInstancesByIds(ids []string) ([]*ec2.Instance, error) {
 }
 
 // Returns the instance with the specified ID
-func (a *AWSCloud) getInstanceById(instanceID string) (*ec2.Instance, error) {
-	request := &ec2.DescribeInstancesInput{
-		InstanceIds: []*string{&instanceID},
-	}
-
-	instances, err := a.ec2.DescribeInstances(request)
+// This function is currently unused, but seems very likely to be needed again
+func (a *AWSCloud) getInstanceByID(instanceID string) (*ec2.Instance, error) {
+	instances, err := a.getInstancesByIDs([]*string{&instanceID})
 	if err != nil {
 		return nil, err
 	}
+
 	if len(instances) == 0 {
 		return nil, fmt.Errorf("no instances found for instance: %s", instanceID)
 	}
 	if len(instances) > 1 {
 		return nil, fmt.Errorf("multiple instances found for instance: %s", instanceID)
 	}
-	return instances[0], nil
+
+	return instances[instanceID], nil
+}
+
+func (a *AWSCloud) getInstancesByIDs(instanceIDs []*string) (map[string]*ec2.Instance, error) {
+	instancesByID := make(map[string]*ec2.Instance)
+	if len(instanceIDs) == 0 {
+		return instancesByID, nil
+	}
+
+	request := &ec2.DescribeInstancesInput{
+		InstanceIds: instanceIDs,
+	}
+
+	instances, err := a.ec2.DescribeInstances(request)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, instance := range instances {
+		instanceID := orEmpty(instance.InstanceId)
+		if instanceID == "" {
+			continue
+		}
+
+		instancesByID[instanceID] = instance
+	}
+
+	return instancesByID, nil
 }
 
 // Fetches instances by node names; returns an error if any cannot be found.

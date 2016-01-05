@@ -22,6 +22,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"k8s.io/kubernetes/pkg/cloudprovider"
+
+	"github.com/golang/glog"
 )
 
 func (s *AWSCloud) findRouteTable(clusterName string) (*ec2.RouteTable, error) {
@@ -55,6 +57,23 @@ func (s *AWSCloud) ListRoutes(clusterName string) ([]*cloudprovider.Route, error
 	}
 
 	var routes []*cloudprovider.Route
+	var instanceIDs []*string
+
+	for _, r := range table.Routes {
+		instanceID := orEmpty(r.InstanceId)
+
+		if instanceID == "" {
+			continue
+		}
+
+		instanceIDs = append(instanceIDs, &instanceID)
+	}
+
+	instances, err := s.getInstancesByIDs(instanceIDs)
+	if err != nil {
+		return nil, err
+	}
+
 	for _, r := range table.Routes {
 		instanceID := orEmpty(r.InstanceId)
 		destinationCIDR := orEmpty(r.DestinationCidrBlock)
@@ -63,9 +82,10 @@ func (s *AWSCloud) ListRoutes(clusterName string) ([]*cloudprovider.Route, error
 			continue
 		}
 
-		instance, err := s.getInstanceById(instanceID)
-		if err != nil {
-			return nil, err
+		instance, found := instances[instanceID]
+		if !found {
+			glog.Warningf("unable to find instance ID %s in the list of instances being routed to", instanceID)
+			continue
 		}
 		instanceName := orEmpty(instance.PrivateDnsName)
 		routeName := clusterName + "-" + destinationCIDR
